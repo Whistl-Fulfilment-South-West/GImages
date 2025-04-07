@@ -1,11 +1,17 @@
-import os
-from datetime import datetime
-dest = 'C:/Development/python/gimages/archive'
-image = "C:/Development/python/gimages/Splash.jpg"
-print(os.path.splitext(image)[1])
-file = os.path.basename(image)
-suffix = os.path.splitext(image)[1]
-file = os.path.basename(image)
-ind = file.find(suffix)
-nufile = file[:ind] + datetime.now().strftime("%Y%m%dT%H%M%S") + file[ind:]
-os.rename(image, dest + "/" + nufile)
+import pyodbc
+
+
+server = 'SQL-SSRS'
+database = 'Appz'
+try:
+
+    cnxn = pyodbc.connect('DRIVER={SQL Server};SERVER='+server+';DATABASE='+database+';Trusted_Connection=yes')
+    cursor = cnxn.cursor()
+    query = "SELECT [Server] as serv,Description FROM Onestock_Clients"
+    cursor.execute(query)
+    clients = {}
+    for row in cursor.fetchall():
+        clients[row[1]] = row[0]
+    print(clients)
+except Exception as e:
+    print(e)

@@ -9,7 +9,6 @@ import logging
 import time
 import tkinter as tk
 from tkinter import ttk
-from tkinter import StringVar
 
 def convert_image_to_binary(image_path):
     with open(image_path, 'rb') as file:
@@ -229,6 +228,74 @@ def logclear(path, suffix = ".log"):
                 if os.path.isfile(g):
                     os.remove(g)
 
+
+def clientchoosev2():
+    server = 'SQL-SSRS'
+    database = 'Appz'
+    try:
+        # Connect to DB and fetch client data
+        cnxn = pyodbc.connect(f'DRIVER={{SQL Server}};SERVER={server};DATABASE={database};Trusted_Connection=yes')
+        cursor = cnxn.cursor()
+        query = "SELECT clid, descr FROM clid"
+        cursor.execute(query)
+
+        # Create mappings
+        descr_to_clid = {}
+        descr_list = []
+        for row in cursor.fetchall():
+            clid, descr = row
+            descr_to_clid[descr] = clid
+            descr_list.append(descr)
+
+        selected_value = {"value": None}
+
+        def on_ok():
+            selected_descr = combo.get()
+            selected_value["value"] = descr_to_clid.get(selected_descr)
+            main_window.destroy()
+
+        def on_selection(event):
+            ok_button.config(state="normal")
+
+        def on_keypress(event):
+            letter = event.char.lower()
+            if not letter.isalpha():
+                return
+            current_index = combo.current()
+            total_items = len(descr_list)
+            for i in range(1, total_items + 1):
+                next_index = (current_index + i) % total_items
+                if descr_list[next_index].lower().startswith(letter):
+                    combo.current(next_index)
+                    break
+
+        main_window = tk.Tk()
+        main_window.title("Choose Client")
+        main_window.geometry("350x150")
+
+        combo = ttk.Combobox(main_window, state="readonly", values=descr_list)
+        combo.place(x=50, y=40)
+        combo.bind("<<ComboboxSelected>>", on_selection)
+        combo.bind("<Key>", on_keypress)
+
+        ok_button = tk.Button(main_window, text="OK", state="disabled", command=on_ok)
+        ok_button.place(x=130, y=90)
+
+        main_window.mainloop()
+
+        return selected_value["value"]
+
+    except Exception as e:
+        logging.error(f"Error: {e}", exc_info=True)
+        return
+
+    finally:
+        if 'cursor' in locals():
+            cursor.close()
+        if 'cnxn' in locals():
+            cnxn.close()
+    
+
 def clientchoose():
     server = 'SQL-SSRS'
     database = 'Appz'
@@ -251,6 +318,22 @@ def clientchoose():
         def on_selection(event):
             ok_button.config(state="normal")
 
+        #subfunction for keypress
+        def on_keypress(event):
+            letter = event.char.lower()
+            if not letter.isalpha():
+                return
+
+            current_index = combo.current()
+            total_items = len(clients)
+
+            # Find next item starting with the pressed letter
+            for i in range(1, total_items + 1):
+                next_index = (current_index + i) % total_items
+                if clients[next_index].lower().startswith(letter):
+                    combo.current(next_index)
+                    break
+
         # create basic GUI
         main_window = tk.Tk()
         main_window.config(width=300, height=200)
@@ -260,6 +343,7 @@ def clientchoose():
         combo = ttk.Combobox(main_window, state="readonly", values=clients)
         combo.place(x=50, y=50)
         combo.bind("<<ComboboxSelected>>", on_selection)
+        combo.bind("<Key>", on_keypress)
 
         #create ok button
         ok_button = tk.Button(main_window, text="OK",state="disabled", command=on_ok)
@@ -356,7 +440,7 @@ def main(source = 'C:/Development/python/gimages',client = None,sep = None):
         #if client not set, let user choose
         if not client:
             client = clientchoose()
-        
+
         #if separator not set, let user choose
         if not sep:
             sep = sepchoose()
