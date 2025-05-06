@@ -9,6 +9,7 @@ import logging
 import time
 import tkinter as tk
 from tkinter import ttk
+from tkinter import messagebox
 
 def convert_image_to_binary(image_path):
     with open(image_path, 'rb') as file:
@@ -45,8 +46,9 @@ def insertimage(client, image, part, ino):
     try:
         cnxn = pyodbc.connect('DRIVER={SQL Server};SERVER='+server+';DATABASE='+database+';Trusted_Connection=yes')
         cursor = cnxn.cursor()
-        query = """EXEC GImage_Insert ? ? ? ?"""
+        query = """EXEC GImage_Insert ?, ?, ?, ?"""
         cursor.execute(query,(client,image_binary,part,ino))
+        cnxn.commit()
     except Exception as e:
         logging.error(f"Error: {e}", exc_info = True)
         errorflag = 1
@@ -64,7 +66,7 @@ def updateimage(client, image, part, ino):
     try:
         cnxn = pyodbc.connect('DRIVER={SQL Server};SERVER='+server+';DATABASE='+database+';Trusted_Connection=yes')
         cursor = cnxn.cursor()
-        query = """EXEC GImage_Update ? ? ? ?"""
+        query = """EXEC GImage_Update ?, ?, ?, ?"""
         cursor.execute(query,(client,image_binary,part,ino))
     except Exception as e:
         logging.error(f"Error: {e}", exc_info = True)
@@ -93,8 +95,11 @@ def dedupe(client,image, part, ino):
             cursor.execute(grabmage, (part, client, ino))
             olimage = cursor.fetchone()
             nuimage = convert_image_to_binary(image)
-            
-            return choose_image_version(olimage,nuimage,client,image,part,ino)
+            logging.info("Requesting decision from user")
+            ans = choose_image_version(olimage,nuimage,client,image,part,ino)
+            if ans == 1:
+                updateimage(client,image,part,ino)
+            return 1
             # displayimages(nuimage,olimage)
             # retry = 0
             # while retry  <  10:
@@ -185,10 +190,10 @@ def choose_image_version(old_image_bytes, new_image_bytes, client, image, part, 
     if result["choice"] == "Y":
         return 1
     elif result["choice"] == "N":
-        return 1
+        return 0
     else:
-        print("No selection made. Discarding new image.")
-        return 1
+        logging.info("No selection made. Discarding new image.")
+        return 0
     
     
 
@@ -229,14 +234,14 @@ def logclear(path, suffix = ".log"):
                     os.remove(g)
 
 
-def clientchoosev2():
+def clientchoose():
     server = 'SQL-SSRS'
     database = 'Appz'
     try:
         # Connect to DB and fetch client data
         cnxn = pyodbc.connect(f'DRIVER={{SQL Server}};SERVER={server};DATABASE={database};Trusted_Connection=yes')
         cursor = cnxn.cursor()
-        query = "SELECT clid, descr FROM clid"
+        query = "SELECT clid, descr FROM clid WHERE descr IS NOT NULL"
         cursor.execute(query)
 
         # Create mappings
@@ -295,76 +300,37 @@ def clientchoosev2():
         if 'cnxn' in locals():
             cnxn.close()
     
-
-def clientchoose():
+def check_part_exists(part,client):
     server = 'SQL-SSRS'
     database = 'Appz'
+    global errorflag
     try:
-        #get values from database - CHANGE SQL QUERY WHEN WE DECIDE WHERE THIS IS COMING FROM
-        cnxn = pyodbc.connect('DRIVER={SQL Server};SERVER='+server+';DATABASE='+database+';Trusted_Connection=yes')
+        # Connect to DB and fetch client data
+        cnxn = pyodbc.connect(f'DRIVER={{SQL Server}};SERVER={server};DATABASE={database};Trusted_Connection=yes')
         cursor = cnxn.cursor()
-        query = "SELECT Description FROM Onestock_Clients"
-        cursor.execute(query)
-        clients = [row.Description for row in cursor]
+        cursor.execute("EXEC GImage_PartCheck ?, ?", part, client)
+        row = cursor.fetchone()
 
-        selected_value = {"value": None} 
-        
-        #subfunction for getting value
-        def on_ok():
-            selected_value["value"] = combo.get()
-            main_window.destroy()
-        
-        #subfunction for first selection of something
-        def on_selection(event):
-            ok_button.config(state="normal")
-
-        #subfunction for keypress
-        def on_keypress(event):
-            letter = event.char.lower()
-            if not letter.isalpha():
-                return
-
-            current_index = combo.current()
-            total_items = len(clients)
-
-            # Find next item starting with the pressed letter
-            for i in range(1, total_items + 1):
-                next_index = (current_index + i) % total_items
-                if clients[next_index].lower().startswith(letter):
-                    combo.current(next_index)
-                    break
-
-        # create basic GUI
-        main_window = tk.Tk()
-        main_window.config(width=300, height=200)
-        main_window.title("Choose Client")
-
-        #create dropdown menu
-        combo = ttk.Combobox(main_window, state="readonly", values=clients)
-        combo.place(x=50, y=50)
-        combo.bind("<<ComboboxSelected>>", on_selection)
-        combo.bind("<Key>", on_keypress)
-
-        #create ok button
-        ok_button = tk.Button(main_window, text="OK",state="disabled", command=on_ok)
-        ok_button.place(x=120, y=100)
-
-        main_window.mainloop()
-
-        if 'cursor' in locals():
-            cursor.close()
-        if 'cnxn' in locals():
-            cnxn.close()
-        return selected_value["value"]
+        if row:
+            return 1
+        else:
+            # Part does not exist – show message box
+            root = tk.Tk()
+            root.withdraw()
+            messagebox.showinfo("Part Not Found", f"Part {part} does not exist on {client}. Skipping.")
+            root.destroy()
+            return 0
 
     except Exception as e:
         logging.error(f"Error: {e}", exc_info=True)
+        errorflag = 1
+        return
+
+    finally:
         if 'cursor' in locals():
             cursor.close()
         if 'cnxn' in locals():
             cnxn.close()
-        return
-
 
 def sepchoose():
     separator_value = {"value": None}
@@ -382,10 +348,15 @@ def sepchoose():
 
     root = tk.Tk()
     root.title("Enter Separator")
-    root.geometry("250x120")
+    root.geometry("300x150")
 
     label = tk.Label(root, text="Enter a single character separator:")
     label.pack(pady=10)
+
+    hint_label = tk.Label(root, text="If no separator used in your files,\n"
+                                     "please enter a single digit not in your filenames.",
+                          wraplength=280, justify="center", fg="gray")
+    hint_label.pack(pady=(0, 10))
 
     entry = tk.Entry(root, width=5, justify="center")
     entry.pack()
@@ -439,19 +410,21 @@ def main(source = 'C:/Development/python/gimages',client = None,sep = None):
     try:
         #if client not set, let user choose
         if not client:
+            logging.info("Querying client")
             client = clientchoose()
 
-        #if separator not set, let user choose
+        #if seperator not set, let user choose
         if not sep:
+            logging.info("Querying seperator")
             sep = sepchoose()
 
-        #if separator or client still not set, quit - something go wrong
+        #if separator or client still not set, quit - something went wrong
         if not client or not sep:
             raise Exception("Client/Separator choice failed")
         
         logging.info(f'Importing images for {client} from {source} with "{sep}" as the separator')
 
-        #
+        #Create archive directory for client if it does not exist
         arch = source + f'/{client}/archive'
         os.makedirs(arch,exist_ok=True)
         
@@ -461,10 +434,11 @@ def main(source = 'C:/Development/python/gimages',client = None,sep = None):
         for ext in image_extensions:
             image_files.extend(glob.glob(os.path.join(source, ext)))
         #This grabs full image path, so no need to join on source when accessing the file. Can get the filename itself by using os.path.basename(file)
+            
         if len(image_files) == 0:
             raise Exception("No files found")
         else:
-            logging.info(f"{len(image_files)} files found")
+            logging.info(f"{len(image_files)} image files found")
         
         for image in image_files:
             if os.path.getsize(image) > 256000:
@@ -483,6 +457,15 @@ def main(source = 'C:/Development/python/gimages',client = None,sep = None):
                 part = img
                 ino = getino(client,part)
 
+            cont = check_part_exists(part,client)
+            if cont == 0:
+                logging.info(f"Part {part} does not exist on database, skipped import")
+                continue
+
+            if errorflag == 1:
+                err_display(f"Part check on {os.path.basename(image)} failed, check log for more details")
+                continue
+
             if part == '' or ino == 0 or not ino:
                 logging.warning(f"Part number detection failed for file {os.path.basename(image)}")
                 err_display(f"Part number detection failed for file {os.path.basename(image)}")
@@ -492,8 +475,8 @@ def main(source = 'C:/Development/python/gimages',client = None,sep = None):
 
             if errorflag == 1:
                 err_display(f"File import failed on file {os.path.basename(image)}, check log for more details")
-                continue
-
+                continue           
+            
             if upd == 0:
                 logging.info(f"No duplicates found, inserting")
                 insertimage(client,image,part,ino)
@@ -505,6 +488,8 @@ def main(source = 'C:/Development/python/gimages',client = None,sep = None):
             logging.info("Archiving file")
             archivefile(image,arch)
         
+        logging.info("All files checked, process complete")
+        
 
     except Exception as e:
         logging.error(f"{e}",exc_info = True)
@@ -513,14 +498,25 @@ def main(source = 'C:/Development/python/gimages',client = None,sep = None):
 #Initialising error flag to exit loops when SQL fails
 errorflag = 0
 
-#Running main - if we have all 3 arguments, pass them to the main function. If we have 0 arguments, run the function with default settings. Otherwise, leave message as to why fail, then exit.
+#Running main - if we have all 3 arguments, pass them to the main function. If we have 2 arguments, should be the source and the client. If we have 1 argument, should be the source. If we have 0 arguments, run the function with default settings. Otherwise, leave message as to why fail, then exit.
 if __name__ == "__main__":
     if len(sys.argv) == 4:
         source = sys.argv[1]
         client = sys.argv[2]
         sep = sys.argv[3]
         main(source,client,sep)
-    elif len(sys.argv) == 2 or len(sys.argv) == 3 or len(sys.argv) > 4:
+
+    elif len(sys.argv) == 3:
+        source = sys.argv[1]
+        client = sys.argv[2]
+        main(source,client)
+
+    elif len(sys.argv) == 2:
+        source = sys.argv[1]
+        main(source)
+
+    elif len(sys.argv) > 4:
         err_display("Incorrect number of arguments, please contact a member of the IS team")
+
     else:
         main()

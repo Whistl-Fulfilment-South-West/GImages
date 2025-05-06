@@ -4,6 +4,9 @@ import os
 from datetime import datetime
 import logging
 import glob
+import pyodbc
+import tkinter as tk
+from tkinter import ttk
 
 def logclear(path, suffix = ".log"):
     for f in os.listdir(path):
