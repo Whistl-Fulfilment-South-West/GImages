@@ -68,6 +68,7 @@ def updateimage(client, image, part, ino):
         cursor = cnxn.cursor()
         query = """EXEC GImage_Update ?, ?, ?, ?"""
         cursor.execute(query,(client,image_binary,part,ino))
+        cnxn.commit()
     except Exception as e:
         logging.error(f"Error: {e}", exc_info = True)
         errorflag = 1
@@ -91,32 +92,15 @@ def dedupe(client,image, part, ino):
 
         if exists:
             logging.warning("Part %s, image no %s already exists for %s", part, ino, client)
-            grabmage = """SELECT image FROM GImage_Data_v2 WHERE part = ? AND client = ? AND ino = ?"""
+            grabmage = """SELECT image_data FROM GImage_Data_v2 WHERE part = ? AND client = ? AND ino = ?"""
             cursor.execute(grabmage, (part, client, ino))
-            olimage = cursor.fetchone()
+            olimage = cursor.fetchone()[0]
             nuimage = convert_image_to_binary(image)
             logging.info("Requesting decision from user")
             ans = choose_image_version(olimage,nuimage,client,image,part,ino)
             if ans == 1:
                 updateimage(client,image,part,ino)
             return 1
-            # displayimages(nuimage,olimage)
-            # retry = 0
-            # while retry  <  10:
-            #     inp = input("Do you want to overwrite the old image (Y/N)?").strip().upper()
-            #     if inp == "Y":
-            #         logging.info("Overwriting old image")
-            #         updateimage(client,image,part,ino)
-            #         return 1
-            #     elif inp == "N":
-            #         logging.info("Discarding new image")
-            #         print("Skipping file")
-            #         return 1
-            #     else:
-            #         print("Invalid option, please enter Y or N")
-            #         retry =+ 1
-            # print("Too many retries, discarding new image")
-            # return 1
             
         else:
             return 0
@@ -156,36 +140,46 @@ def choose_image_version(old_image_bytes, new_image_bytes, client, image, part, 
     old_img.thumbnail(max_size)
     new_img.thumbnail(max_size)
 
-    old_photo = ImageTk.PhotoImage(old_img)
-    new_photo = ImageTk.PhotoImage(new_img)
 
     # Setup tkinter window
     window = tk.Tk()
     window.title(f"Compare Images - {part}")
-    window.geometry("650x400")
 
-    tk.Label(window, text="Old Image").pack(side="left", padx=20, pady=10)
-    tk.Label(window, text="New Image").pack(side="right", padx=20, pady=10)
+    #reference images
+    old_photo = ImageTk.PhotoImage(old_img)
+    new_photo = ImageTk.PhotoImage(new_img)
 
-    old_label = tk.Label(window, image=old_photo)
+    #setup image frame
+    image_frame = tk.Frame(window)
+    image_frame.pack(padx=10, pady=10)
+    
+    #enter old image
+    old_label = tk.Label(image_frame, text="Old Image\n", compound="top")
     old_label.image = old_photo  # Keep reference
-    old_label.pack(side="left", padx=20)
-
-    new_label = tk.Label(window, image=new_photo)
+    old_label.configure(image=old_photo)
+    old_label.pack(side="left", padx=10)
+    
+    #enter new image
+    new_label = tk.Label(image_frame, text="New Image\n", compound="top")
     new_label.image = new_photo
-    new_label.pack(side="right", padx=20)
-
-    # Buttons
+    new_label.configure(image=new_photo)
+    new_label.pack(side="right", padx=10)
+    
+    #button frame
     btn_frame = tk.Frame(window)
     btn_frame.pack(pady=10)
 
+    #"keep old image" button
     keep_old_btn = tk.Button(btn_frame, text="Keep Old Image", command=keep_old, width=20)
     keep_old_btn.grid(row=0, column=0, padx=10)
 
+    #"use new image" button
     use_new_btn = tk.Button(btn_frame, text="Use New Image", command=use_new, width=20)
     use_new_btn.grid(row=0, column=1, padx=10)
 
+    # Let Tkinter auto-size the window
     window.mainloop()
+
 
     if result["choice"] == "Y":
         return 1
@@ -368,7 +362,7 @@ def sepchoose():
     root.mainloop()
     return separator_value["value"]
 
-#function to display error
+#function to display external error
 def err_display(e):
     def on_ok():
         error_window.destroy()
@@ -386,7 +380,223 @@ def err_display(e):
 
     error_window.mainloop()
 
+def startscreen():
+    res = {'choice':None}
+    def maint():
+        res["choice"] = 'maint'
+        start_window.destroy()
+    def imp():
+        res["choice"] = 'imp'
+        start_window.destroy()
+
+    start_window = tk.Tk()
+    start_window.title("GImages")
+    start_window.geometry("300x150")
     
+    message = tk.Label(start_window,text = "Choose your action",wraplength = 280,justify="left")
+    message.pack(padx=10,pady=20)
+    
+    maint_button = tk.Button(start_window,text = "Maintenance", command = maint)
+    maint_button.pack(padx=10,pady=10)
+
+    imp_button = tk.Button(start_window,text = "Import", command = imp)
+    imp_button.pack(padx=10,pady=10)
+
+    start_window.mainloop()
+    return res["choice"]
+
+def maintenance_screen():
+    # Database connection (modify as needed)
+    conn_str = (
+        "Driver={ODBC Driver 17 for SQL Server};"
+        "Server=SQL-SSRS;"
+        "Database=Appz;"
+        "Trusted_Connection=yes;"
+    )
+    conn = pyodbc.connect(conn_str)
+
+    window = tk.Toplevel()
+    window.title("GImage Maintenance")
+
+    # Frames
+    dropdown_frame = ttk.Frame(window)
+    dropdown_frame.pack(pady=10)
+
+    part_frame = ttk.Frame(window)
+    part_frame.pack(pady=10)
+
+    image_frame = ttk.Frame(window)
+    image_frame.pack(pady=10)
+
+    # Tkinter variables
+    clid_var = tk.StringVar()
+    part_var = tk.StringVar()
+
+    def fetch_clids():
+        cursor = conn.cursor()
+        cursor.execute("SELECT clid, descr FROM dbo.clid ORDER BY descr")
+        return cursor.fetchall()
+
+    def fetch_parts(clid):
+        cursor = conn.cursor()
+        cursor.execute("SELECT DISTINCT part FROM dbo.GImage_Data_v2 WHERE client = ?", clid)
+        return [row.part for row in cursor.fetchall()]
+
+    def fetch_images(clid, part):
+        cursor = conn.cursor()
+        cursor.execute("SELECT ino, image_data FROM dbo.GImage_Data_v2 WHERE client = ? AND part = ? ORDER BY ino", clid, part)
+        return cursor.fetchall()
+
+    def delete_image(clid, part, ino):
+        confirm = messagebox.askyesno("Confirm Deletion", f"Are you sure you want to delete image {ino}?")
+        if confirm:
+            try:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM dbo.GImage_Data_v2 WHERE client = ? AND part = ? AND ino = ?", clid, part, ino)
+                conn.commit()
+                messagebox.showinfo("Deleted", f"Image {ino} deleted successfully.")
+                show_images()
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to delete image {ino}: {e}")
+
+    def on_clid_select(event=None):
+        selected_text = clid_var.get()
+        if not selected_text:
+            return
+        selected_clid = selected_text.split(" - ")[0]
+        parts = fetch_parts(selected_clid)
+        part_var.set('')
+        for widget in part_frame.winfo_children():
+            widget.destroy()
+        if parts:
+            ttk.Label(part_frame, text="Select/Search Part:").pack(side=tk.LEFT)
+            search_entry = ttk.Entry(part_frame, textvariable=part_var)
+            search_entry.pack(side=tk.LEFT)
+            part_combo = ttk.Combobox(part_frame, values=parts, textvariable=part_var)
+            part_combo.pack(side=tk.LEFT)
+            part_combo.bind("<<ComboboxSelected>>", lambda e: show_images())
+            search_entry.bind("<Return>", lambda e: show_images())
+
+    def show_images():
+        for widget in image_frame.winfo_children():
+            widget.destroy()
+        selected_text = clid_var.get()
+        selected_part = part_var.get()
+        if not selected_text or not selected_part:
+            return
+        selected_clid = selected_text.split(" - ")[0]
+        images = fetch_images(selected_clid, selected_part)
+        if not images:
+            ttk.Label(image_frame, text="No images found.").pack()
+            return
+        for ino, img_data in images:
+            try:
+                img = Image.open(io.BytesIO(img_data))
+                img = img.resize((200, 200))
+                photo = ImageTk.PhotoImage(img)
+                panel = tk.Label(image_frame, image=photo)
+                panel.image = photo
+                panel.pack(pady=5)
+                btn = ttk.Button(image_frame, text=f"Delete Image {ino}",
+                                 command=lambda i=ino: delete_image(selected_clid, selected_part, i))
+                btn.pack()
+            except Exception as e:
+                ttk.Label(image_frame, text=f"Failed to load image {ino}: {e}").pack()
+
+    # Load client list
+    ttk.Label(dropdown_frame, text="Select Client:").pack(side=tk.LEFT)
+    clids = fetch_clids()
+    clid_dropdown = ttk.Combobox(dropdown_frame, textvariable=clid_var,
+                                  values=[f"{clid[0]} - {clid[1]}" for clid in clids])
+    clid_dropdown.pack(side=tk.LEFT)
+    clid_dropdown.bind("<<ComboboxSelected>>", on_clid_select)
+    window.mainloop()
+
+def import_screen(source, client, sep):
+    #if client not set, let user choose
+    if not client:
+        logging.info("Querying client")
+        client = clientchoose()
+
+    #if seperator not set, let user choose
+    if not sep:
+        logging.info("Querying seperator")
+        sep = sepchoose()
+
+    #if separator or client still not set, quit - something went wrong
+    if not client or not sep:
+        raise Exception("Client/Separator choice failed")
+    
+    logging.info(f'Importing images for {client} from {source} with "{sep}" as the separator')
+
+    #Create archive directory for client if it does not exist
+    arch = source + f'/{client}/archive'
+    os.makedirs(arch,exist_ok=True)
+    
+    #Define image extensions
+    image_extensions = ("*.png", "*.jpg", "*.gif")
+    image_files = []
+    
+    for ext in image_extensions:
+        image_files.extend(glob.glob(os.path.join(source, ext)))
+    #This grabs full image path, so no need to join on source when accessing the file. Can get the filename itself by using os.path.basename(file)
+        
+    if len(image_files) == 0:
+        raise Exception("No files found")
+    else:
+        logging.info(f"{len(image_files)} image files found")
+    
+    for image in image_files:
+        #Check image size, skip if too big
+        if os.path.getsize(image) > 256000:
+            messagebox.showinfo("Image too large",f"Image {os.path.basename(image)} too large. Skipping.")
+            logging.warning(f"Image {os.path.basename(image)} too large. Skipping.")
+            continue
+        logging.info(f"Parsing file {os.path.basename(image)}")
+        part = ''
+        ino = 0
+        splitter = os.path.basename(image)
+        img = splitter.split(".")[0]
+        if sep in img:
+            part = img.split(sep)[0]
+            ino = img.split(sep)[1]
+        else:
+            part = img
+            ino = getino(client,part)
+
+        cont = check_part_exists(part,client)
+        if cont == 0:
+            logging.info(f"Part {part} does not exist on database, skipped import")
+            continue
+
+        if errorflag == 1:
+            err_display(f"Part check on {os.path.basename(image)} failed, check log for more details")
+            continue
+
+        if part == '' or ino == 0 or not ino:
+            logging.warning(f"Part number detection failed for file {os.path.basename(image)}")
+            err_display(f"Part number detection failed for file {os.path.basename(image)}")
+            continue
+        logging.info(f"Checking for duplicates on part {part}, item no {ino} on client {client}")
+        upd = dedupe(client,image,part,ino)
+
+        if errorflag == 1:
+            err_display(f"File import failed on file {os.path.basename(image)}, check log for more details")
+            continue           
+        
+        if upd == 0:
+            logging.info(f"No duplicates found, inserting")
+            insertimage(client,image,part,ino)
+
+        if errorflag == 1:
+            err_display(f"File import failed on file {os.path.basename(image)}, check log for more details")
+            continue
+
+        logging.info("Archiving file")
+        archivefile(image,arch)
+    
+    logging.info("All files checked, process complete")
+
 def main(source = 'C:/Development/python/gimages',client = None,sep = None):
 
     #client = 'TEST', sep = '_'
@@ -408,88 +618,15 @@ def main(source = 'C:/Development/python/gimages',client = None,sep = None):
     logging.info(f"Clearing old log files")
     logclear(log_dest)
     try:
-        #if client not set, let user choose
-        if not client:
-            logging.info("Querying client")
-            client = clientchoose()
-
-        #if seperator not set, let user choose
-        if not sep:
-            logging.info("Querying seperator")
-            sep = sepchoose()
-
-        #if separator or client still not set, quit - something went wrong
-        if not client or not sep:
-            raise Exception("Client/Separator choice failed")
-        
-        logging.info(f'Importing images for {client} from {source} with "{sep}" as the separator')
-
-        #Create archive directory for client if it does not exist
-        arch = source + f'/{client}/archive'
-        os.makedirs(arch,exist_ok=True)
-        
-        image_extensions = ("*.png", "*.jpg", "*.gif")
-        image_files = []
-        
-        for ext in image_extensions:
-            image_files.extend(glob.glob(os.path.join(source, ext)))
-        #This grabs full image path, so no need to join on source when accessing the file. Can get the filename itself by using os.path.basename(file)
-            
-        if len(image_files) == 0:
-            raise Exception("No files found")
+        action = startscreen()
+        if action == 'maint':
+            logging.info(f"Maintenance Screen opened")
+            maintenance_screen()
+        elif action == 'imp':
+            logging.infor("Import process chosen")
+            import_screen(source,client,sep)
         else:
-            logging.info(f"{len(image_files)} image files found")
-        
-        for image in image_files:
-            if os.path.getsize(image) > 256000:
-                print(f"Image {os.path.basename(image)} too large. Skipping.")
-                logging.warning(f"Image {os.path.basename(image)} too large. Skipping.")
-                continue
-            logging.info(f"Parsing file {os.path.basename(image)}")
-            part = ''
-            ino = 0
-            splitter = os.path.basename(image)
-            img = splitter.split(".")[0]
-            if sep in img:
-                part = img.split(sep)[0]
-                ino = img.split(sep)[1]
-            else:
-                part = img
-                ino = getino(client,part)
-
-            cont = check_part_exists(part,client)
-            if cont == 0:
-                logging.info(f"Part {part} does not exist on database, skipped import")
-                continue
-
-            if errorflag == 1:
-                err_display(f"Part check on {os.path.basename(image)} failed, check log for more details")
-                continue
-
-            if part == '' or ino == 0 or not ino:
-                logging.warning(f"Part number detection failed for file {os.path.basename(image)}")
-                err_display(f"Part number detection failed for file {os.path.basename(image)}")
-                continue
-            logging.info(f"Checking for duplicates on part {part}, item no {ino} on client {client}")
-            upd = dedupe(client,image,part,ino)
-
-            if errorflag == 1:
-                err_display(f"File import failed on file {os.path.basename(image)}, check log for more details")
-                continue           
-            
-            if upd == 0:
-                logging.info(f"No duplicates found, inserting")
-                insertimage(client,image,part,ino)
-
-            if errorflag == 1:
-                err_display(f"File import failed on file {os.path.basename(image)}, check log for more details")
-                continue
-
-            logging.info("Archiving file")
-            archivefile(image,arch)
-        
-        logging.info("All files checked, process complete")
-        
+            raise Exception("Invalid choice")
 
     except Exception as e:
         logging.error(f"{e}",exc_info = True)
