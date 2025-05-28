@@ -10,6 +10,7 @@ import time
 import tkinter as tk
 from tkinter import ttk
 from tkinter import messagebox
+import time
 import tkinter.font
 #from tkinter import filedialog ##no longer used
 
@@ -17,6 +18,12 @@ import tkinter.font
 
 class GImageApp:
     def __init__(self, master,maint):
+        time.sleep(2.5)
+        try:
+            import pyi_splash
+            pyi_splash.close()
+        except:
+            pass
         self.master = master
         self.master.title("GImages")
         self.source = None
@@ -712,8 +719,16 @@ class GImageApp:
                     widget.destroy()
                 ino, img_data = images[current_index.get()]
                 try:
+                    details = detail_get(selected_clid,selected_part)
+                    if details:
+                        descr = details[0]
+                        descr_frame = tk.Frame(image_frame)
+                        descr_frame.pack()
+                        descr_label = tk.Label(descr_frame,text = descr,font = self.font)
+                        descr_label.pack(pady=5)
+                    
                     img = Image.open(io.BytesIO(img_data))
-                    img = img.resize((200, 200))
+                    img = img.resize((300, 300))
                     photo = ImageTk.PhotoImage(img)
                     
                     img_label = tk.Label(image_frame, image=photo)
@@ -739,36 +754,39 @@ class GImageApp:
                     # → button
                     next_btn = ttk.Button(btn_frame, text="→", command=show_next)
                     next_btn.grid(row=0, column=2, padx=5)
-                    details = detail_get(selected_clid,selected_part)
+                    
                     if details:
-                        descr = details[0]
                         notes = details[1]
                         def_bin = details[2]
                         def_store = details[3]
                         def_supl = details[4]
                         stock = details[5]
                         allocated = details[6]
-                        descr_frame = tk.Frame(image_frame)
-                        descr_frame.pack()
-                        descr_label = tk.Label(descr_frame,text = descr,font = self.font)
-                        descr_label.pack(pady=5)
                         notes_frame = tk.Frame(image_frame)
                         notes_frame.pack()
                         note_label = tk.Label(notes_frame,text = f"Goods In Notes:\n {notes}",font =self.font)
                         note_label.pack(pady=5)
                         detail_frame = tk.Frame(image_frame)
                         detail_frame.pack()
-                        def_bin_label = tk.Label(detail_frame,text = f"Default Bin - {def_bin}",font = self.font)
-                        def_bin_label.grid(row = 0, column = 0, padx = 5, pady = 5)
-                        def_store_label = tk.Label(detail_frame,text = f"Default Store - {def_store}",font = self.font)
-                        def_store_label.grid(row = 1, column = 0, padx = 5, pady = 5)
-                        stock_label = tk.Label(detail_frame,text = f"Stock - {stock}",font = self.font)
-                        stock_label.grid(row = 0, column = 1, pady = 5, padx=5)
-                        aloc_label = tk.Label(detail_frame,text = f"Allocated - {allocated}",font = self.font)
-                        aloc_label.grid(row = 1, column = 1, pady = 5, padx=5)
+                        def_bin_txt = tk.Label(detail_frame,text = f"Default Bin:",font=self.font)
+                        def_bin_txt.grid(row=0,column=0,padx = 5, pady = 5)
+                        def_bin_label = tk.Label(detail_frame,text = def_bin,font = self.font)
+                        def_bin_label.grid(row = 0, column = 1, padx = 5, pady = 5)
+                        def_store_txt = tk.Label(detail_frame,text = f"Default Store:",font = self.font)
+                        def_store_txt.grid(row = 1,column=0,padx = 5, pady = 5)
+                        def_store_label = tk.Label(detail_frame,text = def_store,font = self.font)
+                        def_store_label.grid(row = 1, column = 1, padx = 5, pady = 5)
+                        stock_txt = tk.Label(detail_frame,text = f"Stock:",font = self.font)
+                        stock_txt.grid(row = 0,column = 2,pady = 5, padx=5)
+                        stock_label = tk.Label(detail_frame,text = stock,font = self.font)
+                        stock_label.grid(row = 0, column = 3, pady = 5, padx=5)
+                        aloc_txt = tk.Label(detail_frame,text = f"Allocated:",font = self.font)
+                        aloc_txt.grid(row = 1,column = 2, pady = 5, padx = 5)
+                        aloc_label = tk.Label(detail_frame, text = allocated, font = self.font)
+                        aloc_label.grid(row = 1, column = 3, pady = 5, padx = 5)
                         supl_frame = tk.Frame(image_frame)
                         supl_frame.pack()
-                        def_supl_label = tk.Label(supl_frame,text = f"Default Supplier - {def_supl}",font = self.font)
+                        def_supl_label = tk.Label(supl_frame,text = f"Default Supplier: {def_supl}",font = self.font)
                         def_supl_label.pack(pady = 5)
 
                 except Exception as e:
