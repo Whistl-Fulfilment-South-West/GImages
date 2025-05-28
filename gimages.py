@@ -150,7 +150,10 @@ class GImageApp:
 
             def on_keypress(event):
                 letter = event.char.lower()
-                if not letter.isalpha():
+                if event.keysym == "Tab" and combo.current() != -1:
+                    on_selection()
+                    return
+                elif not letter.isalpha():
                     return
                 current_index = combo.current()
                 total_items = len(descr_list)
@@ -639,7 +642,27 @@ class GImageApp:
                 except Exception as e:
                     messagebox.showerror("Error", f"Failed to delete image {ino}: {e}")
 
+        
+
         def on_clid_select(event=None):
+            def on_keypress(event):
+                letter = event.char.lower()
+                if event.keysym == "Tab" and part_combo.current() != -1:
+                    show_images()
+                    return
+                elif not letter.isalnum():
+                    return "break"
+                current_index = part_combo.current()
+                total_items = len(parts)
+                for i in range(1, total_items + 1):
+                    next_index = (current_index + i) % total_items
+                    if parts[next_index].lower().startswith(letter):
+                        part_combo.current(next_index)
+                        break
+                
+                    
+                return "break"
+
             selected_text = clid_var.get()
             if not selected_text:
                 return
@@ -661,6 +684,7 @@ class GImageApp:
                 part_combo = ttk.Combobox(part_frame, values=parts, textvariable=part_var)
                 part_combo.pack(side=tk.LEFT)
                 part_combo.bind("<<ComboboxSelected>>", lambda e: show_images())
+                part_combo.bind("<Key>", on_keypress)
                 search_entry.bind("<Return>", lambda e: show_images())
                 search_entry.bind("<Tab>", lambda e: show_images())
                 bcode_entry.bind("<Return>", lambda e: show_images())
@@ -724,7 +748,7 @@ class GImageApp:
                         descr = details[0]
                         descr_frame = tk.Frame(image_frame)
                         descr_frame.pack()
-                        descr_label = tk.Label(descr_frame,text = descr,font = self.font)
+                        descr_label = tk.Label(descr_frame,text = f"{selected_part}: {descr}",font = self.font)
                         descr_label.pack(pady=5)
                     
                     img = Image.open(io.BytesIO(img_data))
@@ -803,7 +827,22 @@ class GImageApp:
                     update_display()
 
             update_display()
-
+        
+        def on_clidpress(event):
+                letter = event.char.lower()
+                if event.keysym == "Tab" and clid_dropdown.current() != -1:
+                    on_clid_select()
+                    return
+                elif not letter.isalpha():
+                    return "break"
+                current_index = clid_dropdown.current()
+                total_items = len(list(clid_map.keys()))
+                for i in range(1, total_items + 1):
+                    next_index = (current_index + i) % total_items
+                    if list(clid_map.keys())[next_index].lower().startswith(letter):
+                        clid_dropdown.current(next_index)
+                        break
+                return "break"
         # Load client list
         ttk.Label(dropdown_frame, text="Select Client:").pack(side=tk.LEFT)
         clids = fetch_clids()  # list of (clid, descr)
@@ -812,6 +851,7 @@ class GImageApp:
                              values=list(clid_map.keys()))
         clid_dropdown.pack(side=tk.LEFT)
         clid_dropdown.bind("<<ComboboxSelected>>", on_clid_select)
+        clid_dropdown.bind("<Key>", on_clidpress)
         window.wait_window()
         self.source = None
         self.client = None

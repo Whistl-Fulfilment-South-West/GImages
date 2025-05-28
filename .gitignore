@@ -13,3 +13,5 @@ Black Rock/
 *.png
 *.bmp
 *.gif
+dist/
+build/
