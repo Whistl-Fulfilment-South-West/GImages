@@ -10,22 +10,28 @@ import time
 import tkinter as tk
 from tkinter import ttk
 from tkinter import messagebox
-from tkinter import filedialog
+import tkinter.font
+#from tkinter import filedialog ##no longer used
 
 
 
 class GImageApp:
-    def __init__(self, master,source,client,sep):
+    def __init__(self, master,maint):
         self.master = master
         self.master.title("GImages")
-        self.source = source
-        self.client = client
-        self.sep = sep
+        self.source = None
+        self.client = None
+        self.sep = None
+        self.maint = maint
         self.errorflag = 0
+        self.font = tkinter.font.Font(family="Arial Rounded MT Bold", size=10)
         self.show_start_screen()
     
     def show_start_screen(self):
         self.master.withdraw()
+        if self.maint == 0:
+            self.launch_maintenance(0)
+            sys.exit()
         res = {'choice': None}
 
         def maint():
@@ -36,6 +42,14 @@ class GImageApp:
             res["choice"] = 'imp'
             start_window.destroy()
 
+        def display():
+            res["choice"] = "display"
+            start_window.destroy()
+
+        def folder():
+            res["choice"] = "folder"
+            start_window.destroy()
+
         def exit_app():
             self.master.destroy()
         
@@ -44,11 +58,11 @@ class GImageApp:
 
         start_window = tk.Toplevel()
         start_window.title("GImages")
-        start_window.geometry("300x180")  
+        start_window.geometry("400x230")  
 
         start_window.protocol("WM_DELETE_WINDOW", on_close)
         
-        message = tk.Label(start_window, text="Choose your action", wraplength=280, justify="left")
+        message = tk.Label(start_window, text="Choose your action", wraplength=280, justify="left", font = self.font)
         message.pack(padx=10, pady=20)
 
         button_frame = tk.Frame(start_window)
@@ -61,17 +75,27 @@ class GImageApp:
 
         imp_button = tk.Button(button_frame, text="Import", command=imp, width=button_width)
         imp_button.grid(row=0, column=1, padx=10)
+
+        disp_button = tk.Button(button_frame, text = "Display",command = display,width=button_width)
+        disp_button.grid(row=1,column=0,padx=10,pady=10)
+
+        fold_button = tk.Button(button_frame, text = "Create Folder",command = folder,width=button_width)
+        fold_button.grid(row=1,column=1,padx=10,pady=10)
         
         exit_button = tk.Button(start_window, text="Exit", command=exit_app, width=button_width)
-        exit_button.pack(pady=5)
+        exit_button.pack(pady=5,padx=10)
 
         start_window.wait_window()
         if res["choice"] == 'maint':
-            self.launch_maintenance()
+            self.launch_maintenance(1)
         elif res["choice"] == 'imp':
             self.launch_import()
+        elif res["choice"] == 'display':
+            self.launch_maintenance(0)
+        elif res["choice"] == "folder":
+            self.folder_create()
 
-
+    
     def show_error(self,e):
         def on_ok():
             error_window.destroy()
@@ -128,7 +152,6 @@ class GImageApp:
                     if descr_list[next_index].lower().startswith(letter):
                         combo.current(next_index)
                         break
-
             main_window = tk.Toplevel()
             main_window.title("Choose Client")
             main_window.geometry("350x150")
@@ -148,6 +171,17 @@ class GImageApp:
         except Exception as e:
             logging.error(f"Error: {e}", exc_info=True)
         return
+
+    def folder_create(self):
+        client = self.clientchoose()
+        folder = '//Elucid9/Elucid/Data_Import/Gimage/' + client
+        if os.path.isdir(folder):
+            messagebox.showinfo("GImages Folder", f"{folder} already exists")
+        else:
+            os.makedirs(folder,exist_ok=True)
+            messagebox.showinfo("GImages Folder",f"Folder created - {folder}")
+        self.show_start_screen()
+    
     def sepchoose(self):
         separator_value = {"value": None}
 
@@ -166,7 +200,7 @@ class GImageApp:
         root.title("Enter Separator")
         root.geometry("300x150")
 
-        label = tk.Label(root, text="Enter a single character separator:")
+        label = tk.Label(root, text="Enter a single character separator:", font = self.font)
         label.pack(pady=10)
 
         hint_label = tk.Label(root, text="If no separator used in your files,\n"
@@ -298,13 +332,13 @@ class GImageApp:
         image_frame.pack(padx=10, pady=10)
         
         #enter old image
-        old_label = tk.Label(image_frame, text="Old Image\n", compound="top")
+        old_label = tk.Label(image_frame, text="Old Image\n", compound="top", font = self.font)
         old_label.image = old_photo  # Keep reference
         old_label.configure(image=old_photo)
         old_label.pack(side="left", padx=10)
         
         #enter new image
-        new_label = tk.Label(image_frame, text="New Image\n", compound="top")
+        new_label = tk.Label(image_frame, text="New Image\n", compound="top", font = self.font)
         new_label.image = new_photo
         new_label.configure(image=new_photo)
         new_label.pack(side="right", padx=10)
@@ -510,6 +544,9 @@ class GImageApp:
         
             logging.info("All files checked, process complete")
             messagebox.showinfo("GImage Import Finished","All files checked, process complete")
+            self.source = None
+            self.client = None
+            self.sep = None
             self.show_start_screen()
         except Exception as e:
            
@@ -535,7 +572,7 @@ class GImageApp:
 
         error_window.wait_window()
 
-    def launch_maintenance(self):
+    def launch_maintenance(self,maint=0):
         conn_str = (
             "Driver={ODBC Driver 17 for SQL Server};"
             "Server=SQL-SSRS;"
@@ -545,11 +582,17 @@ class GImageApp:
         conn = pyodbc.connect(conn_str)
 
         window = tk.Toplevel()
-        window.title("GImage Maintenance")
+        if maint == 1:
+            window.title("GImage Maintenance")
+        else:
+            window.title("GImage Display")
 
         # Frames
         dropdown_frame = ttk.Frame(window)
         dropdown_frame.pack(pady=10)
+
+        bcode_frame = ttk.Frame(window)
+        bcode_frame.pack(pady = 10)
 
         part_frame = ttk.Frame(window)
         part_frame.pack(pady=10)
@@ -559,6 +602,7 @@ class GImageApp:
 
         # Tkinter variables
         clid_var = tk.StringVar()
+        bcode_var = tk.StringVar()
         part_var = tk.StringVar()
 
         def fetch_clids():
@@ -594,10 +638,16 @@ class GImageApp:
                 return
             selected_clid = clid_map.get(selected_text)
             parts = fetch_parts(selected_clid)
+            bcode_var.set('')
             part_var.set('')
             for widget in part_frame.winfo_children():
                 widget.destroy()
+            for widget in bcode_frame.winfo_children():
+                widget.destroy()
             if parts:
+                ttk.Label(bcode_frame,text = "Barcode:").pack(side = tk.LEFT)
+                bcode_entry = ttk.Entry(bcode_frame,textvariable=bcode_var)
+                bcode_entry.pack(side=tk.LEFT)
                 ttk.Label(part_frame, text="Select/Search Part:").pack(side=tk.LEFT)
                 search_entry = ttk.Entry(part_frame, textvariable=part_var)
                 search_entry.pack(side=tk.LEFT)
@@ -605,20 +655,54 @@ class GImageApp:
                 part_combo.pack(side=tk.LEFT)
                 part_combo.bind("<<ComboboxSelected>>", lambda e: show_images())
                 search_entry.bind("<Return>", lambda e: show_images())
+                search_entry.bind("<Tab>", lambda e: show_images())
+                bcode_entry.bind("<Return>", lambda e: show_images())
+                bcode_entry.bind("<Tab>", lambda e: show_images())
+
+        def part_get(clid,bcode):
+            conn_str = (
+            "Driver={ODBC Driver 17 for SQL Server};"
+            "Server=SQL-SSRS;"
+            "Database=Appz;"
+            "Trusted_Connection=yes;"
+            )
+            conn = pyodbc.connect(conn_str)
+            cursor = conn.cursor()
+            cursor.execute("EXEC GImage_Bcode_Search ?, ?", bcode, clid)
+            row = cursor.fetchone()
+            return row[0] if row else None
+        
+        def detail_get(clid,part):
+            conn_str = (
+            "Driver={ODBC Driver 17 for SQL Server};"
+            "Server=SQL-SSRS;"
+            "Database=Appz;"
+            "Trusted_Connection=yes;"
+            )
+            conn = pyodbc.connect(conn_str)
+            cursor = conn.cursor()
+            cursor.execute("EXEC GImage_Part_Details ?, ?",part,clid)
+            row = cursor.fetchone()
+            return row if row else None
 
         def show_images():
             for widget in image_frame.winfo_children():
                 widget.destroy()
 
             selected_text = clid_var.get()
+            selected_bcode = bcode_var.get()
             selected_part = part_var.get()
-            if not selected_text or not selected_part:
+            if not selected_text or not (selected_part or selected_bcode):
                 return
 
             selected_clid = clid_map.get(selected_text)
+            
+            if not selected_part and selected_bcode:
+                selected_part = part_get(selected_clid,selected_bcode)
+
             images = fetch_images(selected_clid, selected_part)
             if not images:
-                ttk.Label(image_frame, text="No images found.").pack()
+                ttk.Label(image_frame, text="No images found.",font=self.font).pack()
                 return
 
             current_index = tk.IntVar(value=0)
@@ -631,12 +715,12 @@ class GImageApp:
                     img = Image.open(io.BytesIO(img_data))
                     img = img.resize((200, 200))
                     photo = ImageTk.PhotoImage(img)
-
+                    
                     img_label = tk.Label(image_frame, image=photo)
                     img_label.image = photo
                     img_label.pack(pady=5)
 
-                    count_label = tk.Label(image_frame, text=f"Image {current_index.get() + 1} of {len(images)}")
+                    count_label = tk.Label(image_frame, text=f"Image {current_index.get() + 1} of {len(images)}",font = self.font)
                     count_label.pack(pady=5)
 
                     btn_frame = tk.Frame(image_frame)
@@ -647,13 +731,45 @@ class GImageApp:
                     prev_btn.grid(row=0, column=0, padx=5)
 
                     # Delete button
-                    del_btn = ttk.Button(btn_frame, text=f"Delete Image {ino}",
-                                         command=lambda: delete_image(selected_clid, selected_part, ino))
-                    del_btn.grid(row=0, column=1, padx=5)
+                    if maint == 1:
+                        del_btn = ttk.Button(btn_frame, text=f"Delete Image {ino}",
+                                             command=lambda: delete_image(selected_clid, selected_part, ino))
+                        del_btn.grid(row=0, column=1, padx=5)
 
                     # → button
                     next_btn = ttk.Button(btn_frame, text="→", command=show_next)
                     next_btn.grid(row=0, column=2, padx=5)
+                    details = detail_get(selected_clid,selected_part)
+                    if details:
+                        descr = details[0]
+                        notes = details[1]
+                        def_bin = details[2]
+                        def_store = details[3]
+                        def_supl = details[4]
+                        stock = details[5]
+                        allocated = details[6]
+                        descr_frame = tk.Frame(image_frame)
+                        descr_frame.pack()
+                        descr_label = tk.Label(descr_frame,text = descr,font = self.font)
+                        descr_label.pack(pady=5)
+                        notes_frame = tk.Frame(image_frame)
+                        notes_frame.pack()
+                        note_label = tk.Label(notes_frame,text = f"Goods In Notes:\n {notes}",font =self.font)
+                        note_label.pack(pady=5)
+                        detail_frame = tk.Frame(image_frame)
+                        detail_frame.pack()
+                        def_bin_label = tk.Label(detail_frame,text = f"Default Bin - {def_bin}",font = self.font)
+                        def_bin_label.grid(row = 0, column = 0, padx = 5, pady = 5)
+                        def_store_label = tk.Label(detail_frame,text = f"Default Store - {def_store}",font = self.font)
+                        def_store_label.grid(row = 1, column = 0, padx = 5, pady = 5)
+                        stock_label = tk.Label(detail_frame,text = f"Stock - {stock}",font = self.font)
+                        stock_label.grid(row = 0, column = 1, pady = 5, padx=5)
+                        aloc_label = tk.Label(detail_frame,text = f"Allocated - {allocated}",font = self.font)
+                        aloc_label.grid(row = 1, column = 1, pady = 5, padx=5)
+                        supl_frame = tk.Frame(image_frame)
+                        supl_frame.pack()
+                        def_supl_label = tk.Label(supl_frame,text = f"Default Supplier - {def_supl}",font = self.font)
+                        def_supl_label.pack(pady = 5)
 
                 except Exception as e:
                     ttk.Label(image_frame, text=f"Failed to load image {ino}: {e}").pack()
@@ -679,8 +795,15 @@ class GImageApp:
         clid_dropdown.pack(side=tk.LEFT)
         clid_dropdown.bind("<<ComboboxSelected>>", on_clid_select)
         window.wait_window()
+        self.source = None
+        self.client = None
+        self.sep = None
+        if self.maint == 1:
+            self.show_start_screen()
+        else:
+            self.master.destroy()
 
-        self.show_start_screen()
+
 
 def logclear(path, suffix = ".log"):
     for f in os.listdir(path):
@@ -694,30 +817,20 @@ def convert_image_to_binary(image_path):
     with open(image_path, 'rb') as file:
         return file.read()
 
-def main(source = None,client = None,sep = None):
+def main(maint = 1):
     root = tk.Tk()
-    app = GImageApp(root,source,client,sep)
+    app = GImageApp(root,maint)
     root.mainloop()
 
 
 
-#Running main - if we have all 3 arguments, pass them to the main function. If we have 2 arguments, should be the source and the client. If we have 1 argument, should be the source. If we have 0 arguments, run the function with default settings. Otherwise, leave message as to why fail, then exit.
+
 if __name__ == "__main__":
-    if len(sys.argv) == 4:
-        source = sys.argv[1]
-        client = sys.argv[2]
-        sep = sys.argv[3]
-        main(source,client,sep)
-
-    elif len(sys.argv) == 3:
-        source = sys.argv[1]
-        client = sys.argv[2]
-        main(source,client)
-
-    elif len(sys.argv) == 2:
-        source = sys.argv[1]
-        main(source)
-
+    if len(sys.argv) == 2:
+        maint = 0
+        if sys.argv[1] == "maint":
+            maint = 1
+        main(maint)
     else:
         main()
 
