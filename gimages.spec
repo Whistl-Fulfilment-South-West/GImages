@@ -16,7 +16,7 @@ a = Analysis(
 )
 pyz = PYZ(a.pure)
 splash = Splash(
-    'logo.png',
+    'logo.PNG',
     binaries=a.binaries,
     datas=a.datas,
     text_pos=None,

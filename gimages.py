@@ -18,7 +18,6 @@ import tkinter.font
 
 class GImageApp:
     def __init__(self, master,maint):
-        time.sleep(2.5)
         try:
             import pyi_splash
             pyi_splash.close()
@@ -399,7 +398,7 @@ class GImageApp:
             if 'cursor' in locals():
                 cursor.close()
             if 'cnxn' in locals():
-                cnxn.close()  
+                cnxn.close()
     
     def archivefile(self,image,dest):
         suffix = os.path.splitext(image)[1]
@@ -413,7 +412,7 @@ class GImageApp:
         server = 'SQL-SSRS'
         database = 'Appz'
         try:
-            cnxn = pyodbc.connect('DRIVER={SQL Server};SERVER='+server+';DATABASE='+database+';Trusted_Connection=yes')
+            cnxn = pyodbc.connect('DRIVER={SQL Server};SERVER='+server+';DATABASE='+database+';Trusted_Connection=yes;')
             cursor = cnxn.cursor()
             query = """EXEC GImage_dedupe ?, ?, ?"""
             cursor.execute(query, (part, client, ino))
@@ -461,7 +460,10 @@ class GImageApp:
 
             if not client:
                 self.err_display("Import failed - Please choose client and separator")
+                self.client = None
+                self.sep = None
                 self.show_start_screen()
+                sys.exit()
 
             if not self.source:
                 self.source = '//Elucid9/Elucid/Data_Import/Gimage/' + client
@@ -505,7 +507,7 @@ class GImageApp:
 
             for image in image_files:
                 #Check image size, skip if too big
-                if os.path.getsize(image) > 256000:
+                if os.path.getsize(image) > 512000:
                     messagebox.showinfo("Image too large",f"Image {os.path.basename(image)} too large. Skipping.")
                     logging.warning(f"Image {os.path.basename(image)} too large. Skipping.")
                     continue
@@ -584,7 +586,7 @@ class GImageApp:
 
     def launch_maintenance(self,maint=0):
         conn_str = (
-            "Driver={ODBC Driver 17 for SQL Server};"
+            "Driver={SQL Server};"
             "Server=SQL-SSRS;"
             "Database=Appz;"
             "Trusted_Connection=yes;"
@@ -692,7 +694,7 @@ class GImageApp:
 
         def part_get(clid,bcode):
             conn_str = (
-            "Driver={ODBC Driver 17 for SQL Server};"
+            "Driver={SQL Server};"
             "Server=SQL-SSRS;"
             "Database=Appz;"
             "Trusted_Connection=yes;"
@@ -701,11 +703,12 @@ class GImageApp:
             cursor = conn.cursor()
             cursor.execute("EXEC GImage_Bcode_Search ?, ?", bcode, clid)
             row = cursor.fetchone()
+            conn.commit()
             return row[0] if row else None
         
         def detail_get(clid,part):
             conn_str = (
-            "Driver={ODBC Driver 17 for SQL Server};"
+            "Driver={SQL Server};"
             "Server=SQL-SSRS;"
             "Database=Appz;"
             "Trusted_Connection=yes;"
@@ -714,6 +717,7 @@ class GImageApp:
             cursor = conn.cursor()
             cursor.execute("EXEC GImage_Part_Details ?, ?",part,clid)
             row = cursor.fetchone()
+            conn.commit()
             return row if row else None
 
         def show_images():
@@ -786,6 +790,9 @@ class GImageApp:
                         def_supl = details[4]
                         stock = details[5]
                         allocated = details[6]
+                        weight = details[7]
+                        volume = details[8]
+                        supl_part = details[9]
                         notes_frame = tk.Frame(image_frame)
                         notes_frame.pack()
                         note_label = tk.Label(notes_frame,text = f"Goods In Notes:\n {notes}",font =self.font)
@@ -808,10 +815,20 @@ class GImageApp:
                         aloc_txt.grid(row = 1,column = 2, pady = 5, padx = 5)
                         aloc_label = tk.Label(detail_frame, text = allocated, font = self.font)
                         aloc_label.grid(row = 1, column = 3, pady = 5, padx = 5)
+                        weight_txt = tk.Label(detail_frame,text = "Weight:", font = self.font)
+                        weight_txt.grid(row = 2, column = 0, pady = 5, padx = 5)
+                        weight_label = tk.Label(detail_frame,text = weight,font = self.font)
+                        weight_label.grid(row = 2, column = 1, pady = 5, padx = 5)
+                        volume_txt = tk.Label(detail_frame, text = "Volume:", font=self.font)
+                        volume_txt.grid(row = 2, column = 2, pady = 5, padx = 5)
+                        volume_label = tk.Label(detail_frame, text = f"{volume}\u00b3",font=self.font)
+                        volume_label.grid(row = 2, column = 3, pady=5,padx=5)
                         supl_frame = tk.Frame(image_frame)
                         supl_frame.pack()
                         def_supl_label = tk.Label(supl_frame,text = f"Default Supplier: {def_supl}",font = self.font)
-                        def_supl_label.pack(pady = 5)
+                        def_supl_label.grid(row = 0, column = 0, pady = 5)
+                        supl_part_label = tk.Label(supl_frame,text = f"Supplier Part: {supl_part}", font = self.font)
+                        supl_part_label.grid(row = 1, column = 0, pady = 5)
 
                 except Exception as e:
                     ttk.Label(image_frame, text=f"Failed to load image {ino}: {e}").pack()
