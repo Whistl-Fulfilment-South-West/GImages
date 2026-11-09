@@ -12,6 +12,7 @@ from tkinter import ttk
 from tkinter import messagebox
 import time
 import tkinter.font
+from tkinterdnd2 import DND_FILES, TkinterDnD
 #from tkinter import filedialog ##no longer used
 
 
@@ -33,6 +34,7 @@ class GImageApp:
         self.maint = maint
         self.errorflag = 0
         self.font = tkinter.font.Font(family="Arial Rounded MT Bold", size=10)
+        self.image_label = None
         self.show_start_screen()
     
     def show_start_screen(self):
@@ -61,6 +63,10 @@ class GImageApp:
 
         def folder():
             res["choice"] = "folder"
+            start_window.destroy()
+
+        def single_upload():
+            res["choice"] = "upload"
             start_window.destroy()
 
         #exiting/closing close entire app
@@ -99,6 +105,9 @@ class GImageApp:
 
         fold_button = tk.Button(button_frame, text = "Create Folder",command = folder,width=button_width)
         fold_button.grid(row=1,column=1,padx=10,pady=10)
+
+        ind_button = tk.Button(button_frame, text = "Single Upload", command= single_upload,width=button_width)
+        ind_button.grid(row = 2, column = 0 ,padx=10,pady=10)
         
         #Exit button packed below button frame
         exit_button = tk.Button(start_window, text="Exit", command=exit_app, width=button_width)
@@ -114,6 +123,8 @@ class GImageApp:
             self.launch_maintenance(0)
         elif res["choice"] == "folder":
             self.folder_create()
+        elif res["choice"] == "upload":
+            self.individual_upload()
 
     #Screen for just choosing the client (used in import and folder creation processes)
     def clientchoose(self):
@@ -940,6 +951,153 @@ class GImageApp:
         else:
             self.master.destroy()
 
+    def individual_upload(self):
+        server = 'SQL-SSRS'
+        database = 'Appz'
+        logging.info("Individual image upload selected")
+        try:
+            # Connect to DB and fetch client data
+            cnxn = pyodbc.connect(f'DRIVER={{SQL Server}};SERVER={server};DATABASE={database};Trusted_Connection=yes')
+            cursor = cnxn.cursor()
+            query = "SELECT clid, descr FROM clid WHERE descr IS NOT NULL"
+            cursor.execute(query)
+
+            # Create mappings
+            descr_to_clid = {}
+            descr_list = []
+            for row in cursor.fetchall():
+                clid, descr = row
+                descr_to_clid[descr] = clid
+                descr_list.append(descr)
+            selected_value = {"value": None}
+        except Exception as e:
+            logging.error(f"Error: {e}", exc_info=True)
+
+        sku_var = tk.StringVar()
+        ino_var = tk.StringVar()
+        self.image = None
+        def load_image(event):
+            self.image = event.data.strip('{}')
+            if self.image_label:
+                if self.image_label.winfo_exists():
+                    self.image_label.destroy()
+            if os.path.isfile(self.image) and self.image.lower().endswith((".jpg",".png",".bmp")):
+                if os.path.getsize(self.image) <= 512000:
+                    image = Image.open(self.image)
+                    image = image.resize((600,600))
+                    photo = ImageTk.PhotoImage(image,master = image_frame)
+                    
+                    self.image_label = tk.Label(image_frame,text="Image")
+                    self.image_label.image = photo
+                    self.image_label.configure(image=photo)
+                    self.image_label.pack(padx=10,pady=10)
+                    
+                    clear_button.config(state="active")
+                    client_choice.config(state="readonly")
+                else:
+                    self.err_display("Image file too large - please use an image less than 512kB")
+            else:
+                self.err_display("Please use a valid image file(jpg, png or bmp)")
+
+        def upload_image():
+            sku = sku_entry.get()
+            ino = ino_entry.get()
+            if ino:
+                if not ino.isnumeric():
+                    self.err_display("Image number must be a number")
+                    return
+            selected_descr = client_choice.get()
+            client = descr_to_clid.get(selected_descr)
+            logging.info(f"Importing file {self.image}, SKU {sku}, ino {ino} for client {selected_descr}")
+            if self.check_part_exists(sku,client):
+                if ino:
+                    if not self.dedupe(client,self.image,sku,ino):
+                        self.insertimage(client,self.image,sku,ino)
+                else:
+                    ino = self.getino(client,sku)
+                    self.insertimage(client,self.image,sku,ino)
+                clear_image()
+                logging.info(f'Image succesfully uploaded for {sku}')
+                messagebox.showinfo('Image Uploaded',f'Image succesfully uploaded for {sku}')
+            else:
+                self.err_display(f"Part {sku} does not exist on {selected_descr}")
+                logging.error(f"Part {sku} does not exist on {selected_descr}")
+                return
+
+        def clear_image():
+            if self.image_label:
+                if self.image_label.winfo_exists():
+                    self.image_label.destroy()
+                    self.image = None
+                    sku_entry.delete(0,'end')
+                    ino_entry.delete(0,'end')
+
+                    upload_button.config(state="disabled")
+                    clear_button.config(state="disabled")
+        
+        def on_selection(_event):
+            if self.image:
+                upload_button.config(state="active")
+
+        def on_keypress(event):
+            letter = event.char.lower()
+            if event.keysym == "Tab" and client_choice.current() != -1:
+                on_selection()
+                return
+            elif not letter.isalpha():
+                return
+            current_index = client_choice.current()
+            total_items = len(descr_list)
+            for i in range(1, total_items + 1):
+                next_index = (current_index + i) % total_items
+                if descr_list[next_index].lower().startswith(letter):
+                    client_choice.current(next_index)
+                    break
+
+        def on_close():
+            upload_window.destroy()
+            self.show_start_screen()
+
+        def sku_entered(event):
+            if client_choice.get() and self.image:
+                upload_button.config(state="active")
+                clear_button.config(state="active")
+
+        upload_window = TkinterDnD.Tk()
+        upload_window.focus_force()
+        upload_window.title("GImage Upload")
+        upload_window.protocol("WM_DELETE_WINDOW",on_close)
+        upload_window.geometry("900x800")
+        upload_window.drop_target_register(DND_FILES)
+        upload_window.dnd_bind("<<Drop>>",load_image)
+        upload_frame = tk.Frame(upload_window)
+        upload_frame.pack()
+        upload_label = tk.Label(upload_frame,text="Drag and drop image file to upload", font=self.font)
+        upload_label.pack()
+        image_frame = tk.Canvas(upload_window)
+        image_frame.pack()
+        ui_frame = tk.Frame(upload_window)
+        ui_frame.pack()
+        sku_label = tk.Label(ui_frame, text="Part No",font=self.font)
+        sku_label.grid(row=1,column=1,padx=5,pady=5)
+        sku_entry = tk.Entry(ui_frame,textvariable=sku_var)
+        sku_entry.grid(row=1, column=2,padx=5,pady=5)
+        sku_entry.bind('<KeyRelease>',sku_entered)
+        ino_label = tk.Label(ui_frame, text="Image No (blank will create new image)",font=self.font)
+        ino_label.grid(row=1,column=3,padx=5,pady=5)
+        ino_entry = tk.Entry(ui_frame,textvariable=ino_var)
+        ino_entry.grid(row=1,column=4,padx=5,pady=5)
+        client_label = tk.Label(ui_frame,text="Client",font=self.font)
+        client_label.grid(row=1,column=5,padx=5,pady=5)
+        client_choice = ttk.Combobox(ui_frame,state="disabled",values=descr_list,font=self.font)
+        client_choice.grid(row=1,column=6,padx=5,pady=5)
+        client_choice.bind("<<ComboboxSelected>>", on_selection)
+        client_choice.bind("<Key>", on_keypress)
+        upload_button = tk.Button(ui_frame, text="Upload",command=upload_image,state="disabled",font=self.font)
+        upload_button.grid(row=2,column=2,padx=5,pady=5)
+        clear_button = tk.Button(ui_frame,text="Clear",command=clear_image,state="disabled",font=self.font)
+        clear_button.grid(row=2,column=4,padx=5,pady=5)
+        upload_window.mainloop()
 
 #Function to clear the log files
 def logclear(path, suffix = ".log"):
