@@ -9,5 +9,4 @@ The application has 4 options - in default mode, it automatically switches to th
 2. Display. This is the same as the Maintenance screen, except the option to delete the image has been removed.
 3. Import. Allows the user to choose a client and a "separator". The folder imported from is based on the client chosen, the SKU associated is based on the filename of the image file, and the separator allows multiple images for the same SKU. This then imports the images into the system for the client specified.
 4. Create Folder. This creates the folder structure needed for the Import option above. The base folder is hard coded, and the folder name is based off the site and database name of the client.
-
-At time of writing, this is not in use as we have only received a few test images from clients. In addition, to be 100% useful, this needs to be able to run on our handheld scanners - there is an SSRS report that duplicates the "Display" screen that can work, but not yet fully deployed.
+5. Individual Upload. Allows user to upload single images to the database, specifying the SKU and client the image is for.
